@@ -18,6 +18,7 @@ export function createParallelFreeWebSearchProviderBase() {
     signupUrl: "https://parallel.ai",
     docsUrl: "https://docs.openclaw.ai/tools/parallel-search",
     credentialPath: "",
+    autoDetectOrder: 76,
     ...createWebSearchProviderContractFields({
       credentialPath: "",
       searchCredential: { type: "scoped", scopeId: "parallel-free" },

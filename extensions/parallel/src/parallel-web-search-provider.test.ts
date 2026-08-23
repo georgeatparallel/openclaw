@@ -815,13 +815,13 @@ describe("parallel-free web search provider", () => {
     expect(recovered.searchId).toBe("recovered-free");
   });
 
-  it("exposes keyless metadata without claiming auto-detect fallback", () => {
+  it("exposes keyless setup ordering metadata", () => {
     const provider = createParallelFreeWebSearchProvider();
     expect(provider.id).toBe("parallel-free");
     expect(provider.label).toBe("Parallel Search (Free)");
     expect(provider.requiresCredential).toBe(false);
     expect(provider.envVars).toEqual([]);
-    expect(provider.autoDetectOrder).toBeUndefined();
+    expect(provider.autoDetectOrder).toBe(76);
   });
   it("advertises the shared count contract and free MCP's tighter session_id cap", () => {
     const parameters = freeTool().parameters as ToolParameters;

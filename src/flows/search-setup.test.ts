@@ -226,6 +226,7 @@ describe("runSearchSetupFlow", () => {
       config: original,
       reason: "user-skipped",
     });
+    expect(ensureOnboardingPluginInstalled).not.toHaveBeenCalled();
   });
 
   it("localizes setup copy for web search provider selection", async () => {
@@ -346,6 +347,80 @@ describe("runSearchSetupFlow", () => {
       }),
     );
     expect(prompt?.initialValue).toBe("codex");
+  });
+
+  it("selects and installs the ordered keyless provider for fresh setup", async () => {
+    webSearchProviderMocks.resolvePluginWebSearchProviders.mockReturnValue([]);
+    const select = vi.fn().mockResolvedValueOnce("parallel-free");
+
+    const result = await withEnvAsync(
+      { PARALLEL_API_KEY: undefined },
+      async () =>
+        await runSearchSetupFlow(
+          { plugins: { allow: ["parallel"] } },
+          createNonExitingRuntime(),
+          createWizardPrompter({ select: select as never }),
+        ),
+    );
+
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ initialValue: "parallel-free" }));
+    expect(result.outcome).toBe("completed");
+    expect(result.config.tools?.web?.search).toMatchObject({
+      enabled: true,
+      provider: "parallel-free",
+    });
+    expect(ensureOnboardingPluginInstalled).toHaveBeenCalledTimes(1);
+    expect(latestPluginInstallRequest()).toMatchObject({
+      entry: {
+        pluginId: "parallel",
+        trustedSourceLinkedOfficialInstall: true,
+        install: { npmSpec: "@openclaw/parallel-plugin" },
+      },
+    });
+    expect(result.config.plugins?.installs?.parallel?.spec).toBe("@openclaw/parallel-plugin");
+  });
+
+  it.each([
+    {
+      label: "an explicitly configured provider",
+      config: {
+        plugins: { allow: ["xai", "parallel"] },
+        tools: { web: { search: { provider: "grok" } } },
+      },
+      env: { XAI_API_KEY: undefined, PARALLEL_API_KEY: undefined },
+      expected: "grok",
+    },
+    {
+      label: "a configured competing provider",
+      config: { plugins: { allow: ["xai", "parallel"] } },
+      env: { XAI_API_KEY: "xai-test-key", PARALLEL_API_KEY: undefined },
+      expected: "grok",
+    },
+    {
+      label: "paid Parallel when its credential is configured",
+      config: { plugins: { allow: ["xai", "parallel"] } },
+      env: { XAI_API_KEY: undefined, PARALLEL_API_KEY: "parallel-test-key" },
+      expected: "parallel",
+    },
+    {
+      label: "skip when no credentialed or keyless provider is available",
+      config: { plugins: { allow: ["xai"] } },
+      env: { XAI_API_KEY: undefined, PARALLEL_API_KEY: undefined },
+      expected: "__skip__",
+    },
+  ])("preserves $label ahead of keyless setup fallback", async ({ config, env, expected }) => {
+    const select = vi.fn().mockResolvedValueOnce("__skip__");
+
+    await withEnvAsync(env, async () => {
+      await runSearchSetupFlow(
+        config,
+        createNonExitingRuntime(),
+        createWizardPrompter({ select: select as never }),
+      );
+    });
+
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ initialValue: expected }));
+    expect(ensureOnboardingPluginInstalled).not.toHaveBeenCalled();
   });
 
   it("uses existing xAI OAuth for Grok web search without prompting for an API key", async () => {
@@ -469,6 +544,7 @@ describe("runSearchSetupFlow", () => {
       { quickstartDefaults: true },
     );
 
+    expect(select.mock.calls[0]?.[0]).toMatchObject({ initialValue: "grok" });
     expect(note).not.toHaveBeenCalledWith(mockGrokProvider.credentialNote, mockGrokProvider.label);
   });
 
@@ -513,6 +589,7 @@ describe("runSearchSetupFlow", () => {
     const xaiConfig = next.plugins?.entries?.xai?.config as
       | { xSearch?: { enabled?: boolean; model?: string } }
       | undefined;
+    expect(select.mock.calls[0]?.[0]).toMatchObject({ initialValue: "grok" });
     expect(next.tools?.web?.search?.provider).toBe("grok");
     expect(next.tools?.web?.search?.enabled).toBe(false);
     expect(xaiConfig?.xSearch?.enabled).toBe(true);

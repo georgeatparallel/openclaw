@@ -634,11 +634,24 @@ async function runGuidedOnboardingFlow(
       deps.runSetupMemoryImportStep ??
       (await import("../wizard/setup.memory-import.js")).runSetupMemoryImportStep;
     await runMemoryImport({ config: persistedConfig, prompter, runtime });
+    let setupConfig = persistedConfig;
+    if (
+      !alreadyConfigured &&
+      persistedConfig.tools?.web?.search?.enabled !== false &&
+      !persistedConfig.tools?.web?.search?.provider
+    ) {
+      const { runSearchSetupFlow } = await import("../flows/search-setup.js");
+      setupConfig = (
+        await runSearchSetupFlow(persistedConfig, runtime, prompter, {
+          quickstartDefaults: true,
+        })
+      ).config;
+    }
     const runAppRecommendations =
       deps.runAppRecommendations ??
       (await import("../wizard/setup.app-recommendations.js")).setupAppRecommendations;
     const recommendationOutcome = await runAppRecommendations({
-      config: persistedConfig,
+      config: setupConfig,
       prompter,
       runtime,
       workspaceDir: workspace,

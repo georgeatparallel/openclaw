@@ -22,7 +22,10 @@ import {
   type WebSearchInstallCatalogEntry,
 } from "../plugins/web-search-install-catalog.js";
 import { resolvePluginWebSearchProviders } from "../plugins/web-search-providers.runtime.js";
-import { sortWebSearchProviders } from "../plugins/web-search-providers.shared.js";
+import {
+  sortWebSearchProviders,
+  sortWebSearchProvidersForAutoDetect,
+} from "../plugins/web-search-providers.shared.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { resolveWebSearchProviderId } from "../web-search/runtime.js";
 import { t } from "../wizard/i18n/index.js";
@@ -532,9 +535,7 @@ export async function runSearchSetupFlow(
     if (codexRecommended) {
       return CODEX_HOSTED_SEARCH_PROVIDER_ID;
     }
-    // Mirror runtime auto-detect only when it has a concrete configured signal.
-    // Keyless providers are selectable, but never preselected; pressing through
-    // setup should not opt the user into a third-party search destination.
+    // Mirror runtime auto-detect first when it has a concrete configured signal.
     // Resolve over the providers actually shown in setup (`providerOptions`) so
     // the default can't pick an option that isn't listed or force-load runtime
     // code for an install-catalog-only provider.
@@ -562,7 +563,12 @@ export async function runSearchSetupFlow(
     if (detected) {
       return detected.id;
     }
-    return "__skip__";
+    // The visible setup picker provides consent before persisting an explicit
+    // keyless provider. Runtime auto-detect remains credential-only.
+    const keylessDefault = sortWebSearchProvidersForAutoDetect([...providerOptions]).find(
+      (entry) => !providerNeedsCredential(entry),
+    );
+    return keylessDefault?.id ?? "__skip__";
   })();
 
   const options = providerOptions.map((entry) => {

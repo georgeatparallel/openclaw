@@ -6,7 +6,7 @@ import {
 } from "./web-search-install-catalog.js";
 
 describe("web-search install catalog", () => {
-  it("keeps Parallel's keyless provider installable but opt-in", () => {
+  it("keeps Parallel's keyless provider installable with setup ordering", () => {
     const entry = resolveWebSearchInstallCatalogEntry({
       providerId: "parallel-free",
       pluginId: "parallel",
@@ -25,7 +25,7 @@ describe("web-search install catalog", () => {
         credentialPath: "",
       },
     });
-    expect(entry?.provider.autoDetectOrder).toBeUndefined();
+    expect(entry?.provider.autoDetectOrder).toBe(76);
     expect(
       resolveWebSearchInstallCatalogEntries().some(
         (candidate) => candidate.provider.id === "parallel",

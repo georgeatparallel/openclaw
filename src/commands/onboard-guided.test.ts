@@ -325,6 +325,119 @@ describe("runGuidedOnboarding", () => {
     expect(prompter.outro).toHaveBeenCalledWith("Your browser is ready — I'll be in Settings.");
   });
 
+  it("offers configured and keyless search providers during first-run guided onboarding", async () => {
+    const prompter = createWizardPrompter(undefined, {
+      selectValues: ["full", "use", "__skip__"],
+    });
+    const deps = setupDeps({ prompter });
+
+    await runGuidedOnboarding({ acceptRisk: true, workspace: "/tmp/work" }, makeRuntime(), deps);
+
+    expect(prompter.select).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Search provider",
+        initialValue: "parallel-free",
+        options: expect.arrayContaining([
+          expect.objectContaining({ value: "parallel-free" }),
+          expect.objectContaining({ value: "__skip__" }),
+        ]),
+      }),
+    );
+    expect(deps.launchHatchTui).toHaveBeenCalledWith("/tmp/work");
+  });
+
+  it("persists an explicitly accepted keyless search provider before guided handoff", async () => {
+    const resolveSearchProviders = vi
+      .spyOn(
+        await import("../plugins/web-search-providers.runtime.js"),
+        "resolvePluginWebSearchProviders",
+      )
+      .mockReturnValue([]);
+    const installProvider = vi
+      .spyOn(await import("./onboarding-plugin-install.js"), "ensureOnboardingPluginInstalled")
+      .mockImplementation(async ({ cfg, entry }) => ({
+        cfg: {
+          ...cfg,
+          plugins: {
+            ...cfg.plugins,
+            installs: {
+              ...cfg.plugins?.installs,
+              [entry.pluginId]: {
+                source: "npm",
+                spec: entry.install.npmSpec,
+                installPath: `/tmp/openclaw-plugins/${entry.pluginId}`,
+              },
+            },
+          },
+        },
+        installed: true,
+        pluginId: entry.pluginId,
+        status: "installed",
+      }));
+    const writeConfig = vi
+      .spyOn(await import("../wizard/setup.shared.js"), "writeWizardConfigFile")
+      .mockImplementation(async (config) => {
+        localOnboarding.persisted.config = config;
+        return config;
+      });
+
+    try {
+      const prompter = createWizardPrompter(undefined, {
+        selectValues: ["full", "use", "parallel-free"],
+      });
+      const deps = setupDeps({ prompter });
+
+      await runGuidedOnboarding({ acceptRisk: true, workspace: "/tmp/work" }, makeRuntime(), deps);
+
+      expect(localOnboarding.persisted.config?.tools?.web?.search).toMatchObject({
+        enabled: true,
+        provider: "parallel-free",
+      });
+      expect(writeConfig).toHaveBeenCalledOnce();
+      expect(installProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entry: expect.objectContaining({
+            pluginId: "parallel",
+            install: expect.objectContaining({ npmSpec: "@openclaw/parallel-plugin" }),
+          }),
+        }),
+      );
+      expect(deps.runBrowserHandoff).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            tools: { web: { search: { enabled: true, provider: "parallel-free" } } },
+          }),
+        }),
+      );
+    } finally {
+      resolveSearchProviders.mockRestore();
+      installProvider.mockRestore();
+      writeConfig.mockRestore();
+    }
+  });
+
+  it.each([
+    { label: "explicitly selected", search: { provider: "grok", enabled: true } },
+    { label: "explicitly disabled", search: { enabled: false } },
+  ])("keeps $label web search unchanged during guided onboarding", async ({ search }) => {
+    localOnboarding.persisted.config = {
+      tools: { web: { search } },
+      wizard: { securityAcknowledgedAt: "2026-01-01T00:00:00.000Z" },
+    };
+    const prompter = createWizardPrompter(undefined, { selectValues: ["full", "use"] });
+
+    await runGuidedOnboarding(
+      { acceptRisk: true, workspace: "/tmp/work" },
+      makeRuntime(),
+      setupDeps({ prompter }),
+    );
+
+    expect(prompter.select).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Search provider" }),
+    );
+    expect(localOnboarding.persisted.config?.tools?.web?.search).toEqual(search);
+  });
+
   it("prompts for and passes the named first agent into system-agent setup", async () => {
     const prompter = createWizardPrompter({ text: vi.fn(async () => "robby") });
     const applySetup = vi.fn(async () => setupApplyResult());
